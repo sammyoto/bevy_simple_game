@@ -2,6 +2,7 @@ use bevy::math::VectorSpace;
 use bevy::{color::palettes::css::*, prelude::*};
 use bevy::gltf::Gltf;
 use std::collections::HashMap;
+use bevy::input::mouse::AccumulatedMouseMotion;
 
 // Resource for storing Mesh Handles
 #[derive(Resource)]
