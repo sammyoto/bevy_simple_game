@@ -3,6 +3,7 @@ use bevy::{color::palettes::css::*, prelude::*};
 use bevy::gltf::Gltf;
 use bevy::scene::prelude::*;
 use std::collections::HashMap;
+use bevy::input::mouse::AccumulatedMouseMotion;
 
 // Resource for storing Mesh Handles
 #[derive(Resource, Default)]
