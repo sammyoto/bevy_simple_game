@@ -1,40 +1,32 @@
 use bevy::math::VectorSpace;
 use bevy::{color::palettes::css::*, prelude::*};
 use bevy::gltf::Gltf;
+use bevy::scene::prelude::*;
 use std::collections::HashMap;
 
 // Resource for storing Mesh Handles
-#[derive(Resource)]
+#[derive(Resource, Default)]
 struct MeshHandles(HashMap<String, Handle<Mesh>>);
 
 // Resource for storing Material Handles
-#[derive(Resource)]
+#[derive(Resource, Default)]
 struct MaterialHandles(HashMap<String, Handle<StandardMaterial>>);
 
 fn main() {
     App::new()
     .add_plugins(DefaultPlugins)
-    .add_systems(Startup, (startup, load_assets))
+    .init_resource::<MeshHandles>()
+    .init_resource::<MaterialHandles>()
+    .add_systems(Startup, (startup, load_assets, spawn_player.after(load_assets)))
     .add_systems(Update, (update_camera))
     .run();
 }
 
 fn startup(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>
 ) {
-    // Red Cube
-    // commands.spawn((
-    //     Mesh3d(meshes.add(Cuboid::default())),
-    //     MeshMaterial3d(materials.add(Color::from(BLUE))),
-    //     Transform::from_xyz(0.0, 0.0, 0.0)
-    // ));
     // Light
-    commands.spawn((
-        PointLight::default(),
-        Transform::from_xyz(2.0, 3.0, 5.0)
-    ));
+    commands.spawn(DirectionalLight::default());
     // Camera
     commands.spawn((
         Camera3d::default(),
@@ -45,14 +37,11 @@ fn startup(
 fn spawn_player(
     mut commands: Commands,
     mesh_handles: Res<MeshHandles>,
-    material_handles: Res<MaterialHandles>,
-    mut meshes: ResMut<Assets<Mesh>>
+    assets: Res<AssetServer>,
+    material_handles: Res<MaterialHandles>
 ) {
-    commands.spawn((
-        Mesh3d(mesh_handles.0.get("Player").unwrap().clone()),
-        MeshMaterial3d(material_handles.0.get("Player").unwrap().clone()),
-        Transform::from_xyz(0.0, 0.0, 0.0)
-    ));
+    let scene: Handle<Scene> = assets.load("models/goblin.glb#Scene0");
+    commands.spawn(SceneRoot(scene));
 }
 
 fn load_assets(
