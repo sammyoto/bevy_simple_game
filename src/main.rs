@@ -1,11 +1,9 @@
-use bevy::{color::palettes::css::*, prelude::*,
-        diagnostic::{FrameCount, FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, 
+use bevy::{prelude::*, 
         input::{
-            gestures::*,
-            mouse::{MouseButtonInput, MouseMotion, MouseWheel},
+            mouse::{MouseButtonInput},
         },
         window::{
-            CursorGrabMode, CursorIcon, CursorOptions, PresentMode, SystemCursorIcon, WindowLevel,
+            PresentMode,
             WindowTheme,
         },
     };
@@ -145,7 +143,7 @@ fn move_player(
     }
 
     // Move Player
-    let mut to_move = delta.normalize_or_zero();
+    let to_move = delta.normalize_or_zero();
     player.translation += to_move * time.delta_secs() * speed;
 }
 
