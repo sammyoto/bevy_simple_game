@@ -87,7 +87,7 @@ fn spawn_camera(
 ) {
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(10.0, 10.0, 10.0).with_rotation(Quat::from_rotation_y(std::f32::consts::PI / 180.0)),
+        Transform::from_xyz(10.0, 10.0, 10.0),
     ));
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::default())),
