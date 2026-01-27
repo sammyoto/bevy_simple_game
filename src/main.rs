@@ -1,6 +1,16 @@
-use bevy::{color::palettes::css::*, prelude::*};
+use bevy::{color::palettes::css::*, prelude::*,
+        diagnostic::{FrameCount, FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, 
+        input::{
+            gestures::*,
+            mouse::{MouseButtonInput, MouseMotion, MouseWheel},
+        },
+        window::{
+            CursorGrabMode, CursorIcon, CursorOptions, PresentMode, SystemCursorIcon, WindowLevel,
+            WindowTheme,
+        },
+    };
 use std::collections::HashMap;
-use bevy::input::mouse::AccumulatedMouseMotion;
+use bevy::prelude::ops::sqrt;
 
 // Resource for storing Mesh Handles
 #[derive(Resource, Default)]
@@ -9,30 +19,37 @@ struct SceneHandles(HashMap<String, Handle<Scene>>);
 #[derive(Component)]
 struct Player;
 
-#[derive(Resource)]
-struct CameraOrbit {
-    radius: f32,
-    pitch: f32,
-    yaw: f32,
-}
-
-impl Default for CameraOrbit {
-    fn default() -> Self {
-        Self {
-            radius: 15.0,
-            pitch: 0.5,
-            yaw: 0.0,
-        }
-    }
-}
+#[derive(Component)]
+struct Dart;
 
 fn main() {
     App::new()
-    .add_plugins(DefaultPlugins)
+    .add_plugins((
+            DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "Dartman!".into(),
+                    name: Some("dartman.app".into()),
+                    resolution: (1280, 720).into(),
+                    present_mode: PresentMode::AutoVsync,
+                    // Tells Wasm to resize the window according to the available canvas
+                    fit_canvas_to_parent: true,
+                    // Tells Wasm not to override default event handling, like F5, Ctrl+R etc.
+                    prevent_default_event_handling: false,
+                    window_theme: Some(WindowTheme::Dark),
+                    enabled_buttons: bevy::window::EnabledButtons {
+                        maximize: false,
+                        ..Default::default()
+                    },
+                    ..default()
+                }),
+                ..default()
+            }),
+            //LogDiagnosticsPlugin::default(),
+            //FrameTimeDiagnosticsPlugin::default(),
+        ))
     .init_resource::<SceneHandles>()
-    .init_resource::<CameraOrbit>()
     .add_systems(Startup, (startup, load_assets, spawn_player, spawn_camera).chain())
-    .add_systems(Update, (move_player, move_camera).chain())
+    .add_systems(Update, (player_look, move_player, move_camera, throw_dart, update_darts).chain())
     .run();
 }
 
@@ -65,10 +82,17 @@ fn spawn_player(
 
 fn spawn_camera(
     mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(10.0, 10.0, 10.0),
+        Transform::from_xyz(10.0, 10.0, 10.0).with_rotation(Quat::from_rotation_y(std::f32::consts::PI / 180.0)),
+    ));
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::default())),
+        MeshMaterial3d(materials.add(Color::BLACK)),
+        Transform::from_xyz(5.0, 0.0, 0.0),
     ));
 }
 
@@ -82,54 +106,85 @@ fn load_assets(
    scene_handles.0.insert("Dart".to_string(), dart);
 }
 
+fn player_look(
+    mut player: Single<&mut Transform, With<Player>>,
+    mut cursor_moved_reader: MessageReader<CursorMoved>
+) {
+    // Player is assumed in the center of the screen, want a unit vector from the center of the screen to the mouse
+    let center = Vec2::new(640.0, 360.0);
+    for cursor in cursor_moved_reader.read() {
+        let direction: Vec2 = cursor.position - center;
+        let magnitude = sqrt(direction.x.powi(2) + direction.y.powi(2));
+        // Now use the unit direction in relation to the player's position, this will make it look in the direction of the mouse
+        let unit_direction = Vec2::new(direction.x / magnitude, direction.y / magnitude);
+        let look_at_direction = Vec3::new(player.translation.x + unit_direction.x, 0.0, player.translation.z +unit_direction.y);
+
+        player.look_at(look_at_direction, Vec3::Y);
+        return;
+    }
+}
+
 fn move_player(
     mut player: Single<&mut Transform, With<Player>>,
     key: Res<ButtonInput<KeyCode>>,
     time: Res<Time>
 ) {
-    let speed = 50.0;
+    let speed = 10.0;
     let mut delta = Vec3::ZERO;
     if key.pressed(KeyCode::KeyA) {
-        delta.x -= 1.0;
-    }
-    if key.pressed(KeyCode::KeyD) {
-        delta.x += 1.0;
-    }
-    if key.pressed(KeyCode::KeyW) {
         delta.z += 1.0;
     }
-    if key.pressed(KeyCode::KeyS) {
+    if key.pressed(KeyCode::KeyD) {
         delta.z -= 1.0;
+    }
+    if key.pressed(KeyCode::KeyW) {
+        delta.x -= 1.0;
+    }
+    if key.pressed(KeyCode::KeyS) {
+        delta.x += 1.0;
     }
 
     // Move Player
-    let forward = player.forward().as_vec3() * delta.z;
-    let right = player.right().as_vec3() * delta.x;
-    let mut to_move = forward + right;
-    to_move.y = 0.0;
-    to_move = to_move.normalize_or_zero();
+    let mut to_move = delta.normalize_or_zero();
     player.translation += to_move * time.delta_secs() * speed;
 }
 
 fn move_camera(
     player: Single<&Transform, With<Player>>,
-    mut camera: Single<&mut Transform, (With<Camera3d>, Without<Player>)>,
-    mut orbit: ResMut<CameraOrbit>,
-    mouse_motion: Res<AccumulatedMouseMotion>,
+    mut camera: Single<&mut Transform, (With<Camera3d>, Without<Player>)>
+) { 
+    camera.translation = player.translation + Vec3::new(0.0, 30.0, 0.0);
+    camera.look_at(player.translation, Vec3::Y);
+}
+
+fn throw_dart(
+    mut commands: Commands,
+    player: Single<&Transform, With<Player>>,
+    mut mouse_button_input_reader: MessageReader<MouseButtonInput>,
+    scene_handles: Res<SceneHandles>
 ) {
-    // Update orbit angles from mouse movement
-    orbit.yaw -= mouse_motion.delta.x * 0.005;
-    orbit.pitch -= mouse_motion.delta.y * 0.005;
-    
-    // Clamp pitch to prevent flipping
-    orbit.pitch = orbit.pitch.clamp(-std::f32::consts::FRAC_PI_2 + 0.1, std::f32::consts::FRAC_PI_2 - 0.1);
-    
-    // Calculate camera position
-    let cos_pitch = orbit.pitch.cos();
-    let x = orbit.radius * orbit.yaw.cos() * cos_pitch;
-    let y = orbit.radius * orbit.pitch.sin();
-    let z = orbit.radius * orbit.yaw.sin() * cos_pitch;
-    
-    camera.translation = player.translation + Vec3::new(x, y, z);
-    camera.look_at(player.translation + Vec3::new(0.0, 2.0, 0.0), Vec3::Y);
+    for mouse_button_input in mouse_button_input_reader.read() {
+        if mouse_button_input.state.is_pressed() && mouse_button_input.button == MouseButton::Left {
+            let mut dart_transform = player.clone();
+            dart_transform.scale *= Vec3::new(0.2, 0.2, 0.2);
+            dart_transform.rotate(Quat::from_rotation_y(std::f32::consts::PI / 2.0));
+
+            commands.spawn((
+                SceneRoot(scene_handles.0.get("Dart").unwrap().clone()),
+                Transform::from(dart_transform),
+                Dart
+            ));
+        }
+    }
+}
+
+fn update_darts(
+    mut darts: Query<&mut Transform, With<Dart>>,
+    time: Res<Time>,
+) {
+    for mut dart in darts.iter_mut() {
+        let dart_forward = dart.forward().as_vec3();
+        let dart_speed: f32 = 20.0;
+        dart.translation +=  dart_forward * dart_speed * time.delta_secs();
+    }
 }
