@@ -20,6 +20,9 @@ struct Player;
 #[derive(Component)]
 struct Dart;
 
+#[derive(Component)]
+struct Arena;
+
 fn main() {
     App::new()
     .add_plugins((
@@ -53,17 +56,26 @@ fn main() {
 
 fn startup(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    assets: Res<AssetServer>,
 ) {
-    // Circular base
+    // Arena
+    let arena: Handle<Scene> = assets.load("models/dartman_arena.glb#Scene0");
     commands.spawn((
-        Mesh3d(meshes.add(Circle::new(40.0))),
-        MeshMaterial3d(materials.add(Color::WHITE)),
-        Transform::from_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+        SceneRoot(arena),
+        Transform::from_xyz(0.0, -5.0, 0.0),
+        Arena
     ));
     // Light
-    commands.spawn(DirectionalLight::default());
+    commands.spawn(
+        (DirectionalLight
+        {  
+            illuminance: 10000.0,
+            color: Color::WHITE,
+            shadows_enabled: true,
+            ..default()
+        },
+        )
+    );
 }
 
 fn spawn_player( 
