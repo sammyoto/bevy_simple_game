@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 bevy = {version = "0.18.0", features = ["debug"]}
+rand = "0.8"
 
 [profile.dev.package."*"]
 opt-level = 3
