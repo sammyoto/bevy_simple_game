@@ -174,7 +174,7 @@ fn move_camera(
     player: Single<&Transform, With<Player>>,
     mut camera: Single<&mut Transform, (With<Camera3d>, Without<Player>)>
 ) { 
-    camera.translation = player.translation + Vec3::new(0.0, 30.0, 0.0);
+    camera.translation = player.translation + Vec3::new(0.0, 40.0, 0.0);
     camera.look_at(player.translation, Vec3::Y);
 }
 
