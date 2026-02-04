@@ -18,6 +18,12 @@ struct SceneHandles(HashMap<String, Handle<Scene>>);
 #[derive(Resource, Default)]
 struct SpawnTimer(f32);
 
+#[derive(Resource, Default)]
+struct GameScore {
+    player_deaths: u32,
+    goblin_kills: u32,
+}
+
 #[derive(Component)]
 struct Player;
 
@@ -62,6 +68,7 @@ fn main() {
         ))
     .init_resource::<SceneHandles>()
     .init_resource::<SpawnTimer>()
+    .init_resource::<GameScore>()
     .add_systems(Startup, (startup, load_assets, spawn_player, spawn_camera).chain())
     .add_systems(Update, 
         (
@@ -72,7 +79,9 @@ fn main() {
             update_goblins, 
             throw_dart, 
             update_darts, 
-            check_goblin_dart_collision
+            check_goblin_dart_collision,
+            check_goblin_player_collision,
+            update_game_stats
         ).chain())
     .run();
 }
@@ -102,6 +111,26 @@ fn startup(
         },
         )
     );
+    // Text with one section
+    commands.spawn((
+        // Accepts a `String` or any type that converts into a `String`, such as `&str`
+        Text::new("Player Deaths: 0\nGoblin Kills: 0"),
+        Underline,
+        TextFont {
+            font_size: 40.0,
+            ..default()
+        },
+        TextShadow::default(),
+        // Set the justification of the Text
+        TextLayout::new_with_justify(Justify::Center),
+        // Set the style of the Node itself.
+        Node {
+            position_type: PositionType::Absolute,
+            bottom: px(5),
+            right: px(5),
+            ..default()
+        },
+    ));
 }
 
 fn spawn_player( 
@@ -295,6 +324,7 @@ fn check_goblin_dart_collision(
     mut commands: Commands,
     goblins: Query<(Entity, &Transform, &CollisionBox), With<Goblin>>,
     darts: Query<(Entity, &Transform), With<Dart>>,
+    mut game_score: ResMut<GameScore>,
 ) {
     let mut goblin_despawn_list: Vec<Entity> = Vec::new();
     let mut dart_despawn_list: Vec<Entity> = Vec::new();
@@ -314,9 +344,30 @@ fn check_goblin_dart_collision(
 
     for goblin_entity in goblin_despawn_set {
         commands.entity(goblin_entity).despawn();
+        game_score.goblin_kills += 1;
     }
     for dart_entity in dart_despawn_set {
         commands.entity(dart_entity).despawn();
+    }
+}
+
+fn check_goblin_player_collision(
+    mut commands: Commands,
+    goblins: Query<(Entity, &Transform, &CollisionBox), With<Goblin>>,
+    player: Single<(&Transform, &CollisionBox), With<Player>>,
+    mut game_score: ResMut<GameScore>
+) {
+    let mut goblin_despawn_list: Vec<Entity> = Vec::new();
+
+    for (goblin_entity, goblin_transform, goblin_collision) in goblins.iter() {
+        if volume_in_volume((goblin_transform, goblin_collision), (player.0, player.1)) {
+            goblin_despawn_list.push(goblin_entity);
+        }
+    }
+
+    for goblin_entity in goblin_despawn_list {
+        commands.entity(goblin_entity).despawn();
+        game_score.player_deaths += 1;
     }
 }
 
@@ -333,4 +384,54 @@ fn transform_in_volume(
     }
     
     true
+}
+
+fn volume_in_volume(
+    volume1: (&Transform, &CollisionBox),
+    volume2: (&Transform, &CollisionBox),
+) -> bool {
+    let mut coords_to_check: Vec<Vec3> = Vec::new();
+
+    // UPPER
+    // top left upper
+    coords_to_check.push(Vec3::new(volume1.0.translation.x - (volume1.1.size.x / 2.0), volume1.0.translation.y, volume1.0.translation.z + (volume1.1.size.z / 2.0)));
+
+    // top right upper
+    coords_to_check.push(Vec3::new(volume1.0.translation.x + (volume1.1.size.x / 2.0), volume1.0.translation.y, volume1.0.translation.z + (volume1.1.size.z / 2.0)));
+
+    // bottom left upper
+    coords_to_check.push(Vec3::new(volume1.0.translation.x - (volume1.1.size.x / 2.0), volume1.0.translation.y, volume1.0.translation.z - (volume1.1.size.z / 2.0)));
+
+    // bottom right upper
+    coords_to_check.push(Vec3::new(volume1.0.translation.x + (volume1.1.size.x / 2.0), volume1.0.translation.y, volume1.0.translation.z - (volume1.1.size.z / 2.0)));
+
+    // LOWER
+    // top left lower
+    coords_to_check.push(Vec3::new(volume1.0.translation.x - (volume1.1.size.x / 2.0), 0.0, volume1.0.translation.z + (volume1.1.size.z / 2.0)));
+
+    // top right lower
+    coords_to_check.push(Vec3::new(volume1.0.translation.x + (volume1.1.size.x / 2.0), 0.0, volume1.0.translation.z + (volume1.1.size.z / 2.0)));
+
+    // bottom left lower
+    coords_to_check.push(Vec3::new(volume1.0.translation.x - (volume1.1.size.x / 2.0), 0.0, volume1.0.translation.z - (volume1.1.size.z / 2.0)));
+
+    // bottom right lower
+    coords_to_check.push(Vec3::new(volume1.0.translation.x + (volume1.1.size.x / 2.0), 0.0, volume1.0.translation.z - (volume1.1.size.z / 2.0)));
+
+    for coord in coords_to_check {
+        let mut transform = volume2.0.clone();
+        transform.translation = coord;
+        if transform_in_volume(volume2, &transform) {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn update_game_stats(
+    mut text: Single<&mut Text, With<Text>>,
+    game_score: Res<GameScore>,
+) {
+    text.0 = format!("Player Deaths: {}\n Goblin Kills: {}", game_score.player_deaths, game_score.goblin_kills);
 }
