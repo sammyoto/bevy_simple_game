@@ -7,7 +7,7 @@ use bevy::{prelude::*,
             WindowTheme,
         },
     };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use bevy::prelude::ops::sqrt;
 use rand::prelude::*;
 
@@ -29,6 +29,11 @@ struct Dart;
 
 #[derive(Component)]
 struct Arena;
+
+#[derive(Component)]
+struct CollisionBox {
+    size: Vec3,
+}
 
 fn main() {
     App::new()
@@ -58,7 +63,17 @@ fn main() {
     .init_resource::<SceneHandles>()
     .init_resource::<SpawnTimer>()
     .add_systems(Startup, (startup, load_assets, spawn_player, spawn_camera).chain())
-    .add_systems(Update, (player_look, move_player, move_camera, spawn_goblins, update_goblins, throw_dart, update_darts).chain())
+    .add_systems(Update, 
+        (
+            player_look, 
+            move_player, 
+            move_camera, 
+            spawn_goblins, 
+            update_goblins, 
+            throw_dart, 
+            update_darts, 
+            check_goblin_dart_collision
+        ).chain())
     .run();
 }
 
@@ -92,28 +107,28 @@ fn startup(
 fn spawn_player( 
     mut commands: Commands,
     assets: Res<AssetServer>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let player: Handle<Scene> = assets.load("models/dartman.glb#Scene0");
     commands.spawn((
         SceneRoot(player),
         Transform::from_xyz(0.0, 0.0, 0.0),
-        Player
+        Player,
+        CollisionBox {
+            size: Vec3::new(3.0, 13.0, 3.0),
+        },
+        Mesh3d(meshes.add(Cuboid::new(3.0, 13.0,3.0))),
+        MeshMaterial3d(materials.add(Color::hsla(180.0, 0.5, 0.5, 0.1)))
     ));
 }
 
 fn spawn_camera(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(10.0, 10.0, 10.0),
-    ));
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::default())),
-        MeshMaterial3d(materials.add(Color::BLACK)),
-        Transform::from_xyz(5.0, 0.0, 0.0),
     ));
 }
 
@@ -182,7 +197,7 @@ fn throw_dart(
     mut commands: Commands,
     player: Single<&Transform, With<Player>>,
     mut mouse_button_input_reader: MessageReader<MouseButtonInput>,
-    scene_handles: Res<SceneHandles>
+    scene_handles: Res<SceneHandles>,
 ) {
     for mouse_button_input in mouse_button_input_reader.read() {
         if mouse_button_input.state.is_pressed() && mouse_button_input.button == MouseButton::Left {
@@ -214,7 +229,9 @@ fn spawn_goblins(
     mut commands: Commands,
     scene_handles: Res<SceneHandles>,
     mut spawn_timer: ResMut<SpawnTimer>,
-    time: Res<Time>
+    time: Res<Time>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // Spawn goblins every 3 seconds
     if time.elapsed_secs() - spawn_timer.0 <= 3.0 {
@@ -247,7 +264,12 @@ fn spawn_goblins(
         commands.spawn((
             SceneRoot(scene_handles.0.get("Goblin").unwrap().clone()),
             Transform::from_xyz(x, 0.0, z),
-            Goblin
+            Goblin,
+            CollisionBox {
+                size: Vec3::new(3.0, 13.0, 3.0),
+            },
+            Mesh3d(meshes.add(Cuboid::new(3.0, 13.0,3.0))),
+            MeshMaterial3d(materials.add(Color::hsla(180.0, 0.5, 0.5, 0.1)))
         ));
     }
 
@@ -267,4 +289,48 @@ fn update_goblins(
         let speed: f32 = 10.0;
         goblin.translation +=  forward * speed * time.delta_secs();
     }
+}
+
+fn check_goblin_dart_collision(
+    mut commands: Commands,
+    goblins: Query<(Entity, &Transform, &CollisionBox), With<Goblin>>,
+    darts: Query<(Entity, &Transform), With<Dart>>,
+) {
+    let mut goblin_despawn_list: Vec<Entity> = Vec::new();
+    let mut dart_despawn_list: Vec<Entity> = Vec::new();
+
+    // Find all colliding goblins and darts
+    for (goblin_entity, goblin_transform, goblin_collision) in goblins.iter() {
+        for (dart_entity, dart_transform) in darts.iter() {
+            if transform_in_volume((goblin_transform, goblin_collision), dart_transform) {
+                goblin_despawn_list.push(goblin_entity);
+                dart_despawn_list.push(dart_entity);
+            }
+        }
+    }
+
+    let goblin_despawn_set: HashSet<Entity> = goblin_despawn_list.into_iter().collect();
+    let dart_despawn_set: HashSet<Entity> = dart_despawn_list.into_iter().collect();
+
+    for goblin_entity in goblin_despawn_set {
+        commands.entity(goblin_entity).despawn();
+    }
+    for dart_entity in dart_despawn_set {
+        commands.entity(dart_entity).despawn();
+    }
+}
+
+fn transform_in_volume(
+    volume: (&Transform, &CollisionBox),
+    transform: &Transform,
+) -> bool {
+    // check if within x bounds
+    if transform.translation.x < volume.0.translation.x - volume.1.size.x / 2.0 || transform.translation.x > volume.0.translation.x + volume.1.size.x / 2.0 {
+        return false;
+    // check if within z bounds
+    } else if transform.translation.z < volume.0.translation.z - volume.1.size.z / 2.0 || transform.translation.z > volume.0.translation.z + volume.1.size.z / 2.0 {
+        return false;
+    }
+    
+    true
 }
